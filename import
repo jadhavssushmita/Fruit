@@ -1,0 +1,35 @@
+import pandas as pd
+import openpyxl
+
+def read_excel_tabs_dynamic_end(file_path):
+    xl = pd.ExcelFile(file_path)
+    all_data = []
+
+    for sheet in xl.sheet_names:
+        wb = openpyxl.load_workbook(file_path, data_only=True)
+        ws = wb[sheet]
+
+        # Find the ending row where A cell == "* data sourced from ftv"
+        end_row = None
+        for row in ws.iter_rows(min_row=1, max_col=1):
+            if row[0].value and isinstance(row[0].value, str) and row[0].value.strip().lower() == "* data sourced from ftv":
+                end_row = row[0].row
+                break
+
+        if end_row is None:
+            continue  # Skip sheet if end marker is not found
+
+        # Read using pandas from row 5 up to end_row - 1
+        df = pd.read_excel(
+            file_path,
+            sheet_name=sheet,
+            skiprows=4,  # start from row 5 (0-indexed)
+            nrows=(end_row - 5),
+            engine='openpyxl'
+        )
+
+        df['Sheet_Name'] = sheet  # optional: tag with sheet name
+        all_data.append(df)
+
+    final_df = pd.concat(all_data, ignore_index=True)
+    return final_df
