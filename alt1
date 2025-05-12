@@ -1,0 +1,64 @@
+import pandas as pd
+import datetime
+
+# Step 1: Load variant file and filter for Variant == 1
+variant_df = pd.read_excel("variant_file.xlsx")
+variant_df = variant_df[variant_df['Variant'] == 1]
+
+# Step 2: Load all tabs and append tab name
+xls = pd.ExcelFile("basket_file.xlsx")
+all_data = []
+
+for sheet in xls.sheet_names:
+    df = xls.parse(sheet)
+    df['Tab'] = sheet
+    all_data.append(df)
+
+basket_df = pd.concat(all_data, ignore_index=True)
+
+# Step 3: Preprocess basket data
+basket_df['Date'] = pd.to_datetime(basket_df['Date'])
+basket_df['Year'] = basket_df['Date'].dt.year
+
+basket_df['Hour'] = basket_df['Time'].apply(
+    lambda t: t.hour if isinstance(t, datetime.time) else pd.to_datetime(t).hour
+)
+
+# Step 4: Merge with allowed color info from variant
+merged_df = pd.merge(
+    basket_df,
+    variant_df[['Fruit', 'Color', 'Year']],
+    left_on=['Tab', 'Year'],
+    right_on=['Fruit', 'Year'],
+    how='left',
+    suffixes=('', '_variant')
+)
+
+# Step 5: Group by Tab + Date + Hour
+aggregated_rows = []
+
+grouped = merged_df.groupby(['Tab', 'Date', 'Hour'])
+
+for (tab, date, hour), group in grouped:
+    allowed_colors = [c.strip() for c in str(group['Color_variant'].iloc[0]).split(',')]
+    unique_colors = group['Color'].unique()
+
+    # Check if all colors are allowed and at least 2 different colors
+    if all(c in allowed_colors for c in unique_colors) and len(unique_colors) > 1:
+        # Aggregate the group
+        aggregated_row = group.iloc[0].copy()
+
+        aggregated_row['Color'] = " + ".join(sorted(set(group['Color'])))
+        aggregated_row['Sourness'] = group['Sourness'].max()
+        aggregated_row['Weight'] = (group['Weight'] * group['Sourness']).sum() / group['Sourness'].max()
+        aggregated_rows.append(aggregated_row)
+    else:
+        # Keep original rows as-is
+        for _, row in group.iterrows():
+            aggregated_rows.append(row)
+
+# Step 6: Final result
+final_df = pd.DataFrame(aggregated_rows).reset_index(drop=True)
+
+print(final_df)
+# Optional: final_df.to_excel("aggregated_output.xlsx", index=False)
