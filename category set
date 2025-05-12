@@ -1,0 +1,25 @@
+import pandas as pd
+
+# Reference Table
+df1 = pd.DataFrame({
+    'Fruit': ['Apple', 'Banana'],
+    'Category': ['Sweet, Crisp, Sour', 'Tropical, Sweet']
+})
+
+# Comparison Table
+df2 = pd.DataFrame({
+    'Fruit': ['Apple', 'Apple', 'Banana', 'Banana'],
+    'Category': ['Sweet', 'Tropical', 'Sweet', 'Bitter']
+})
+
+# Step 1: Convert df1 categories to set for easy comparison
+df1['Category_Set'] = df1['Category'].apply(lambda x: set([c.strip() for c in x.split(',')]))
+
+# Step 2: Merge df2 with df1 to get the category set
+merged = df2.merge(df1[['Fruit', 'Category_Set']], on='Fruit', how='left')
+
+# Step 3: Check if df2.Category exists in df1.Category_Set
+merged['Match_Flag'] = merged.apply(lambda row: 1 if row['Category'] in row['Category_Set'] else 0, axis=1)
+
+# Optional: Drop intermediate Category_Set column
+result = merged.drop(columns=['Category_Set'])
