@@ -1,0 +1,26 @@
+import pandas as pd
+
+# Load CSV
+df = pd.read_csv('apple.csv', header=None)
+
+# Step 1: Find the row where column A == 'Network'
+row_network = df[df.iloc[:, 0] == 'Network'].index[0]
+
+# Step 2: Build new column names
+columns_new = []
+
+for col in range(df.shape[1]):
+    if col <= 8:  # Columns A to I
+        new_name = df.iloc[row_network, col]
+    else:  # Columns J to AN
+        new_name = df.iloc[row_network - 1, col]
+    columns_new.append(new_name)
+
+# Step 3: Apply new column names
+df.columns = columns_new
+
+# Step 4: Drop rows before `row_network + 1`
+df = df.iloc[row_network + 1:].reset_index(drop=True)
+
+# Optional: Save cleaned version
+df.to_csv('apple_cleaned.csv', index=False)
