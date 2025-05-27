@@ -1,0 +1,41 @@
+import pandas as pd
+
+# Load the Excel file
+file_path = 'your_file.xlsx'
+xls = pd.ExcelFile(file_path)
+
+# Get all sheet names excluding the first
+sheet_names = xls.sheet_names[1:]
+
+# Store results
+dfs = []
+
+for sheet in sheet_names:
+    df = pd.read_excel(xls, sheet_name=sheet, header=None)
+
+    # Step 1: Find row where 'Basicread' appears in Column A
+    start_idx = df[df.iloc[:, 0] == 'Basicread'].index
+    if start_idx.empty:
+        continue
+    start = start_idx[0]
+
+    # Step 2: Find first row where any column contains 'Sunset'
+    sunset_mask = df.apply(lambda row: row.astype(str).str.contains('Sunset', case=False, na=False)).any(axis=1)
+    sunset_idx = df[sunset_mask].index
+    if sunset_idx.empty:
+        continue
+    end = sunset_idx[0]
+
+    # Step 3: Slice rows and reset index
+    temp_df = df.iloc[start:end].reset_index(drop=True)
+
+    # Step 4: Add sheet name column
+    temp_df['SheetName'] = sheet
+
+    dfs.append(temp_df)
+
+# Step 5: Combine all data
+infiniteloopvector = pd.concat(dfs, ignore_index=True)
+
+# Display preview
+print(infiniteloopvector.head())
