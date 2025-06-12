@@ -1,26 +1,99 @@
 import pandas as pd
+import numpy as np
+from datetime import timedelta
+from intervaltree import IntervalTree
 
-# Load CSV
-df = pd.read_csv('apple.csv', header=None)
+# ---------- INPUT DATA -------------
+data = {
+    'Fruit': ['Apple', 'Apple', 'Lemons', 'Lemons', 'Banana', 'Kiwi'],
+    'Variant': ['Red', 'Green', 'Green', 'Yellow', 'Yellow', 'Green'],
+    'Date': ['2025-06-12'] * 6,
+    'Start_time': ['09:00', '09:00', '10:00', '10:00', '11:00', '12:00'],
+    'End_time': ['09:30', '09:20', '10:30', '10:45', '11:30', '12:20'],
+    'Sourness': [2, 3, 5, 6, 1, 2],
+    'Bitterness': [1, 1, 2, 3, 1, 0]
+}
 
-# Step 1: Find the row where column A == 'Network'
-row_network = df[df.iloc[:, 0] == 'Network'].index[0]
+df = pd.DataFrame(data)
 
-# Step 2: Build new column names
-columns_new = []
+# Convert to datetime
+df['Date'] = pd.to_datetime(df['Date'])
+df['Start_time'] = pd.to_datetime(df['Date'].astype(str) + ' ' + df['Start_time'])
+df['End_time'] = pd.to_datetime(df['Date'].astype(str) + ' ' + df['End_time'])
+df['Hour'] = df['Start_time'].dt.hour
 
-for col in range(df.shape[1]):
-    if col <= 8:  # Columns A to I
-        new_name = df.iloc[row_network, col]
-    else:  # Columns J to AN
-        new_name = df.iloc[row_network - 1, col]
-    columns_new.append(new_name)
+# ---------- CASE 1: SIMPLE GROUPING -------------
+case1 = (
+    df.groupby(['Fruit', 'Date', 'Hour'])
+    .agg({
+        'Variant': lambda x: '+'.join(sorted(set(x))),
+        'Sourness': 'sum',
+        'Bitterness': 'sum',
+        'Start_time': 'min',
+        'End_time': 'max'
+    })
+    .reset_index()
+)
+case1['Case'] = 'Case1'
 
-# Step 3: Apply new column names
-df.columns = columns_new
+# ---------- CASE 2: 70% OVERLAP LOGIC -------------
+result_case2 = []
 
-# Step 4: Drop rows before `row_network + 1`
-df = df.iloc[row_network + 1:].reset_index(drop=True)
+for (fruit, date), group in df.groupby(['Fruit', 'Date']):
+    group = group.reset_index(drop=True)
+    duration = (group['End_time'] - group['Start_time']).dt.total_seconds()
+    group['Duration'] = duration
 
-# Optional: Save cleaned version
-df.to_csv('apple_cleaned.csv', index=False)
+    tree = IntervalTree()
+
+    # Add intervals to tree
+    for idx, row in group.iterrows():
+        tree[row['Start_time'].timestamp():row['End_time'].timestamp()] = idx
+
+    visited = set()
+
+    for idx, row in group.iterrows():
+        if idx in visited:
+            continue
+
+        overlaps = tree.overlap(row['Start_time'].timestamp(), row['End_time'].timestamp())
+        cluster = [idx]
+
+        for node in overlaps:
+            other_idx = node.data
+            if other_idx == idx or other_idx in visited:
+                continue
+
+            # calculate overlap %
+            start_overlap = max(row['Start_time'], group.loc[other_idx, 'Start_time'])
+            end_overlap = min(row['End_time'], group.loc[other_idx, 'End_time'])
+            overlap_sec = (end_overlap - start_overlap).total_seconds()
+            min_duration = min(row['Duration'], group.loc[other_idx, 'Duration'])
+            overlap_ratio = overlap_sec / min_duration if min_duration > 0 else 0
+
+            if overlap_ratio >= 0.7:
+                cluster.append(other_idx)
+
+        # Aggregate the cluster
+        cluster_df = group.loc[cluster]
+        agg_row = {
+            'Fruit': fruit,
+            'Date': date,
+            'Hour': cluster_df['Hour'].min(),
+            'Variant': '+'.join(sorted(set(cluster_df['Variant']))),
+            'Sourness': cluster_df['Sourness'].sum(),
+            'Bitterness': cluster_df['Bitterness'].sum(),
+            'Start_time': cluster_df['Start_time'].min(),
+            'End_time': cluster_df['End_time'].max(),
+            'Case': 'Case2'
+        }
+        result_case2.append(agg_row)
+        visited.update(cluster)
+
+case2 = pd.DataFrame(result_case2)
+
+# ---------- FINAL OUTPUT MERGE -------------
+final = pd.concat([case1, case2], ignore_index=True)
+final = final.sort_values(['Fruit', 'Date', 'Hour']).reset_index(drop=True)
+
+print(final)
