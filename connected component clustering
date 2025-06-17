@@ -1,0 +1,65 @@
+import pandas as pd
+import numpy as np
+from datetime import datetime
+import networkx as nx
+
+# Sample data
+data = {
+    'fruit': ['Apple', 'Apple', 'Apple', 'Apple', 'Banana', 'Banana'],
+    'variant': ['Red', 'Green', 'Red', 'Green', 'Yellow', 'Yellow'],
+    'date': ['2025-06-16']*6,
+    'start': ['10:00', '10:30', '14:00', '14:20', '09:00', '09:50'],
+    'end': ['11:00', '11:30', '15:00', '15:20', '10:00', '10:50'],
+    'list_of_variant': [['Red','Green'], ['Red','Green'], ['Red','Green'], ['Red','Green'], ['Yellow'], ['Yellow']]
+}
+
+df = pd.DataFrame(data)
+
+# Convert times
+df['start'] = pd.to_datetime(df['date'] + ' ' + df['start'])
+df['end'] = pd.to_datetime(df['date'] + ' ' + df['end'])
+
+# Function to calculate overlap %
+def overlap_percent(row1, row2):
+    latest_start = max(row1['start'], row2['start'])
+    earliest_end = min(row1['end'], row2['end'])
+    delta = (earliest_end - latest_start).total_seconds()
+    if delta <= 0:
+        return 0
+    duration = (row1['end'] - row1['start']).total_seconds()
+    return delta / duration
+
+result = []
+
+# Process each fruit and date separately
+for (fruit, date), group in df.groupby(['fruit', 'date']):
+    group = group.reset_index(drop=True)
+    G = nx.Graph()
+
+    # Build graph nodes
+    for idx in group.index:
+        G.add_node(idx)
+
+    # Build graph edges for overlaps
+    for i in range(len(group)):
+        for j in range(i+1, len(group)):
+            if group.loc[j, 'variant'] in group.loc[i, 'list_of_variant']:
+                p1 = overlap_percent(group.loc[i], group.loc[j])
+                p2 = overlap_percent(group.loc[j], group.loc[i])
+                if p1 >= 0.7 or p2 >= 0.7:
+                    G.add_edge(i, j)
+
+    # Find connected components
+    for component in nx.connected_components(G):
+        sub = group.loc[list(component)]
+        min_start = sub['start'].min()
+        max_end = sub['end'].max()
+
+        for idx in sub.index:
+            row = sub.loc[idx].copy()
+            row['start'] = min_start
+            row['end'] = max_end
+            result.append(row)
+
+final_df = pd.DataFrame(result)
+print(final_df.sort_values(['fruit','start']))
