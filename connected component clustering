@@ -57,8 +57,14 @@ for (fruit, date), group in df.groupby(['fruit', 'date']):
 
         for idx in sub.index:
             row = sub.loc[idx].copy()
+            affected = []
+            if row['start'] != min_start:
+                affected.append('start')
+            if row['end'] != max_end:
+                affected.append('end')
             row['start'] = min_start
             row['end'] = max_end
+            row['affected_cols'] = ','.join(affected) if affected else 'none'
             result.append(row)
 
 final_df = pd.DataFrame(result)
